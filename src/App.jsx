@@ -1,65 +1,139 @@
 import { useState, useEffect } from 'react'
-import SalesPage from './pages/SalesPage.jsx'
-import AccessGate from './pages/AccessGate.jsx'
-import KitPage from './pages/KitPage.jsx'
+import LandingPage from './pages/LandingPage.jsx'
+import SignUpPage from './pages/SignUpPage.jsx'
+import LoginPage from './pages/LoginPage.jsx'
+import MemberDashboard from './pages/MemberDashboard.jsx'
 
-// ─── ACCESS CODE ────────────────────────────────────────────────────────────
-// Set this in Vercel: Settings → Environment Variables → VITE_ACCESS_CODE
-// Paste the same code into your Lemon Squeezy success email to buyers.
-const ACCESS_CODE = import.meta.env.VITE_ACCESS_CODE || 'BOOKKEEPER2025'
-const STORAGE_KEY = 'bk_kit_access'
+const STORAGE_KEY = 'wayraps_member'
+
+function loadMember() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    return stored ? JSON.parse(stored) : null
+  } catch {
+    return null
+  }
+}
+
+function saveMember(member) {
+  if (member) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(member))
+  } else {
+    localStorage.removeItem(STORAGE_KEY)
+  }
+}
 
 export default function App() {
-  const [page, setPage] = useState('sales')  // 'sales' | 'gate' | 'kit'
-  const [unlocked, setUnlocked] = useState(false)
+  const [page, setPage] = useState('landing')
+  const [selectedTier, setSelectedTier] = useState(null)
+  const [member, setMember] = useState(loadMember)
 
-  // Check if buyer already authenticated this session
+  // Hash-based routing
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (stored === ACCESS_CODE) {
-      setUnlocked(true)
-    }
-  }, [])
-
-  // Read URL hash for navigation
-  useEffect(() => {
-    const handleHash = () => {
-      const hash = window.location.hash
-      if (hash === '#kit') {
-        setPage(unlocked ? 'kit' : 'gate')
-      } else if (hash === '#access') {
-        setPage('gate')
+    function handleHash() {
+      const hash = window.location.hash.replace('#', '') || 'landing'
+      if (hash === 'dashboard' && member) {
+        setPage('dashboard')
+      } else if (hash === 'signup') {
+        setPage('signup')
+      } else if (hash === 'login') {
+        setPage('login')
+      } else if (hash === 'dashboard' && !member) {
+        setPage('login')
       } else {
-        setPage('sales')
+        setPage('landing')
       }
     }
     handleHash()
     window.addEventListener('hashchange', handleHash)
     return () => window.removeEventListener('hashchange', handleHash)
-  }, [unlocked])
+  }, [member])
 
-  const handleUnlock = (code) => {
-    if (code.trim().toUpperCase() === ACCESS_CODE.toUpperCase()) {
-      localStorage.setItem(STORAGE_KEY, ACCESS_CODE)
-      setUnlocked(true)
-      setPage('kit')
-      window.location.hash = '#kit'
-      return true
+  function navigate(target, tierId) {
+    if (tierId) setSelectedTier(tierId)
+    if (target === 'dashboard' && !member) {
+      target = 'login'
     }
-    return false
+    window.location.hash = target === 'landing' ? '' : target
+    setPage(target)
+    window.scrollTo(0, 0)
   }
 
-  const goToGate = () => {
-    setPage('gate')
-    window.location.hash = '#access'
+  function handleSignUp(data) {
+    const newMember = {
+      name: data.name,
+      email: data.email,
+      tier: data.tier,
+      joinedAt: new Date().toISOString(),
+    }
+    setMember(newMember)
+    saveMember(newMember)
+    navigate('dashboard')
   }
 
-  const goToSales = () => {
-    setPage('sales')
-    window.location.hash = ''
+  function handleLogin(data) {
+    // In a real app this would validate against a backend.
+    // For demo, check if there is a stored member with matching email.
+    const stored = loadMember()
+    if (stored && stored.email === data.email) {
+      setMember(stored)
+      navigate('dashboard')
+    } else {
+      // Demo: create a session with the login email
+      const demoMember = {
+        name: data.email.split('@')[0],
+        email: data.email,
+        tier: 'listener',
+        joinedAt: new Date().toISOString(),
+      }
+      setMember(demoMember)
+      saveMember(demoMember)
+      navigate('dashboard')
+    }
   }
 
-  if (page === 'kit' && unlocked) return <KitPage onBack={goToSales} />
-  if (page === 'gate') return <AccessGate onUnlock={handleUnlock} onBack={goToSales} />
-  return <SalesPage onAccessKit={goToGate} alreadyUnlocked={unlocked} onOpenKit={() => { setPage('kit'); window.location.hash = '#kit' }} />
+  function handleLogout() {
+    setMember(null)
+    saveMember(null)
+    navigate('landing')
+  }
+
+  function handleUpgrade(tierId) {
+    if (member) {
+      const updated = { ...member, tier: tierId }
+      setMember(updated)
+      saveMember(updated)
+    }
+  }
+
+  switch (page) {
+    case 'signup':
+      return (
+        <SignUpPage
+          onNavigate={navigate}
+          selectedTier={selectedTier}
+          onSignUp={handleSignUp}
+        />
+      )
+    case 'login':
+      return (
+        <LoginPage
+          onNavigate={navigate}
+          onLogin={handleLogin}
+        />
+      )
+    case 'dashboard':
+      return member ? (
+        <MemberDashboard
+          member={member}
+          onNavigate={navigate}
+          onLogout={handleLogout}
+          onUpgrade={handleUpgrade}
+        />
+      ) : (
+        <LoginPage onNavigate={navigate} onLogin={handleLogin} />
+      )
+    default:
+      return <LandingPage onNavigate={navigate} />
+  }
 }
